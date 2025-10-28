@@ -1,7 +1,6 @@
 {
   "name": "hotel-booking",
   "version": "1.0.0",
-  "description": "",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -26,5 +25,6 @@
     "express": "^4.21.2",
     "nodemailer": "^6.9.4",
     "sqlite3": "^5.1.6"
-  }
+  },
+  "description": ""
 }
