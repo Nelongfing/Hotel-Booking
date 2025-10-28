@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Booking Confirmation</title>
+<style>
+body {font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f4f7fa;margin:0;padding:0;display:flex;justify-content:center;align-items:center;min-height:100vh;}
+.container {background:#fff;border-radius:12px;padding:30px 40px;box-shadow:0 8px 20px rgba(0,0,0,0.1);max-width:500px;width:100%;text-align:center;}
+h1 {color:#4CAF50;font-size:28px;margin-bottom:10px;}
+p {color:#555;line-height:1.5;margin-bottom:20px;}
+#status {background:#f0f4f8;padding:12px;border-radius:8px;color:#333;margin-bottom:20px;min-height:50px;}
+button {background:#4CAF50;color:white;border:none;padding:12px 25px;font-size:16px;border-radius:8px;cursor:pointer;transition:background 0.3s ease;}
+button:disabled {background:#ccc;cursor:not-allowed;}
+button:hover:not(:disabled) {background:#45a049;}
+.success-icon {font-size:50px;color:#4CAF50;margin-bottom:15px;}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="success-icon">✔️</div>
+<h1>Booking Confirmation</h1>
+<p>Click below to finalize payment and send confirmation email.</p>
+<div id="status">Loading booking info...</div>
+<button id="confirmBtn" disabled>Confirm Booking & Send Email</button>
+</div>
+
+<script>
+const statusEl = document.getElementById("status");
+const confirmBtn = document.getElementById("confirmBtn");
+
+const bookingId = localStorage.getItem("pendingBookingId");
+const email = localStorage.getItem("pendingBookingEmail");
+
+if(!bookingId){statusEl.innerText="❌ No booking found";} 
+else {statusEl.innerText=`Pending booking ID: ${bookingId}`; confirmBtn.disabled=false;}
+
+confirmBtn.addEventListener("click", async () => {
+  if(!bookingId) return;
+  confirmBtn.disabled = true;
+  statusEl.innerText = "⏳ Confirming booking...";
+
+  try {
+    // Mark booking confirmed
+    const webhookRes = await fetch("/payments/webhook/paypal", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ bookingId })
+    });
+    await webhookRes.text();
+
+    // Send email
+    const emailRes = await fetch(`/notify/${bookingId}`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ email })
+    });
+    const emailData = await emailRes.json();
+
+    statusEl.innerHTML = `✅ Booking confirmed!<br>Email response: ${JSON.stringify(emailData)}`;
+    localStorage.removeItem("pendingBookingId");
+    localStorage.removeItem("pendingBookingEmail");
+  } catch(err) {
+    console.error(err);
+    statusEl.innerText = "❌ Error confirming booking"; 
+    confirmBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

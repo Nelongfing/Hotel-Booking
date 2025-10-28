@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hotels in Manila</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f5f7fa;
+  margin: 0;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+#hotel-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 1200px;
+}
+.hotel-card {
+  background: #fff;
+  border-radius: 14px;
+  width: 320px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s;
+}
+.hotel-card:hover {
+  transform: scale(1.03);
+}
+.hotel-card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+}
+.hotel-info {
+  padding: 15px;
+}
+h3 {
+  margin: 0 0 10px;
+  font-size: 1.3rem;
+}
+p {
+  font-size: 0.9rem;
+  color: #555;
+}
+button {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  margin: 15px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+button:hover {
+  background: #0056b3;
+}
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+.pagination button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pagination button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+</style>
+</head>
+<body>
+<h2>Hotels in Manila</h2>
+<div id="hotel-list">Loading hotels...</div>
+
+<div class="pagination">
+  <button id="prev-btn">⟨ Prev</button>
+  <button id="next-btn">Next ⟩</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const API_KEY = "sand_8f69823d-70f1-4596-b70a-53505dbe0c25";
+  const API_URL = "https://api.liteapi.travel/v3.0/data/hotels?countryCode=PH&cityName=Manila";
+
+  const HOTELS_PER_PAGE = 6;
+  let hotels = [];
+  let currentPage = 1;
+
+  async function loadHotels() {
+    const hotelList = document.getElementById("hotel-list");
+    hotelList.innerHTML = "<p>Loading hotels...</p>";
+
+    try {
+      const response = await fetch(API_URL, { headers: { "X-API-Key": API_KEY } });
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const result = await response.json();
+      hotels = Array.isArray(result.data) ? result.data : [];
+
+      if (hotels.length === 0) {
+        hotelList.innerHTML = "<p>No hotels found.</p>";
+        return;
+      }
+
+      renderHotels();
+    } catch (error) {
+      console.error("Error loading hotels:", error);
+      hotelList.innerHTML = `<p style="color:red;">Error loading hotels: ${error.message}</p>`;
+    }
+  }
+
+  function renderHotels() {
+    const hotelList = document.getElementById("hotel-list");
+    hotelList.innerHTML = "";
+
+    const start = (currentPage - 1) * HOTELS_PER_PAGE;
+    const end = start + HOTELS_PER_PAGE;
+    const visibleHotels = hotels.slice(start, end);
+
+    visibleHotels.forEach((hotel) => {
+      const card = document.createElement("div");
+      card.classList.add("hotel-card");
+      card.innerHTML = `
+        <img src="${hotel.thumbnail || hotel.image}" alt="${hotel.name}">
+        <div class="hotel-info">
+          <h3>${hotel.name}</h3>
+          <p><strong>City:</strong> ${hotel.city}</p>
+          <p><strong>Address:</strong> ${hotel.address}</p>
+          <p><strong>Stars:</strong> ${hotel.stars ?? "N/A"}</p>
+          <p><strong>Rating:</strong> ${hotel.rating ?? "N/A"}</p>
+          <p>${hotel.hotelDescription ? hotel.hotelDescription.replace(/<[^>]*>/g, '').slice(0, 150) + '...' : ''}</p>
+        </div>
+        <button onclick="window.location.href='booking.html?hotel=${encodeURIComponent(hotel.name)}'">
+          Book Now
+        </button>
+      `;
+      hotelList.appendChild(card);
+    });
+
+    document.getElementById("prev-btn").disabled = currentPage === 1;
+    document.getElementById("next-btn").disabled = end >= hotels.length;
+  }
+
+  document.getElementById("next-btn").addEventListener("click", () => {
+    if (currentPage * HOTELS_PER_PAGE < hotels.length) {
+      currentPage++;
+      renderHotels();
+    }
+  });
+
+  document.getElementById("prev-btn").addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage--;
+      renderHotels();
+    }
+  });
+
+  loadHotels();
+});
+</script>
+</body>
+</html>
