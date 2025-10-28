@@ -45,6 +45,7 @@ app.get("/hotels", (req, res) => {
   const apiKey = process.env.LITEAPI_API_KEY;
   const page = parseInt(req.query.page || "1");
   const limit = parseInt(req.query.limit || "10");
+  const RAILWAY_URL = 'hotel-booking-production-19e0.up.railway.app';
 
   const url = "https://api.liteapi.travel/v3.0/data/hotels?countryCode=PH&cityName=Manila";
   const options = { headers: { "X-API-Key": apiKey } };
