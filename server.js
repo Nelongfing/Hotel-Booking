@@ -25,7 +25,6 @@ app.use(express.static(path.join(__dirname, "public")));
 let db;
 (async () => {
   db = await open({ filename: "./booking.db", driver: sqlite3.Database });
-
   await db.exec(`
     CREATE TABLE IF NOT EXISTS bookings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,9 +93,9 @@ app.post("/bookings", async (req, res) => {
 
     const bookingId = result.lastID;
     console.log("🔍 ENV CHECK:", {
-    PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID ? "✅ found" : "❌ missing",
-    PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET ? "✅ found" : "❌ missing"
-  });
+      PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID ? "✅ found" : "❌ missing",
+      PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET ? "✅ found" : "❌ missing"
+    });
 
     // Get PayPal access token
     const authRes = await fetch("https://api-m.sandbox.paypal.com/v1/oauth2/token", {
@@ -115,11 +114,12 @@ app.post("/bookings", async (req, res) => {
     if (!authData.access_token) throw new Error("Missing PayPal access token");
 
     const accessToken = authData.access_token;
-    const RAILWAY_URL = 'hotel-booking-production-19e0.up.railway.app';
+
+    // Use env variable for deployed URL, fallback to localhost
+    const RAILWAY_URL = process.env.RAILWAY_URL || `http://localhost:${PORT}`;
 
     // Create PayPal order
     const orderRes = await fetch("https://api-m.sandbox.paypal.com/v2/checkout/orders", {
-
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -169,20 +169,14 @@ app.post("/notify/:bookingId", async (req, res) => {
   if (!email) return res.status(400).json({ error: "Missing email" });
 
   try {
-    // Get booking from DB
     const booking = await db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId]);
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    // Nodemailer transporter using Gmail App Password
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: {
-        user: process.env.GMAIL_USER,        // your Gmail address
-        pass: process.env.GMAIL_PASS         // 16-character App Password
-      }
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS }
     });
 
-    // Email content
     const mailOptions = {
       from: process.env.GMAIL_USER,
       to: email,
@@ -203,7 +197,6 @@ Thank you for booking with us!
 `
     };
 
-    // Send email
     await transporter.sendMail(mailOptions);
 
     return res.json({ message: "Email sent successfully" });
