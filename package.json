@@ -11,10 +11,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.6",
+    "resend": "^6.3.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },

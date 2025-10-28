@@ -161,7 +161,9 @@ app.post("/payments/webhook/paypal", async (req, res) => {
   }
 });
 
-// Send email
+import sgMail from '@sendgrid/mail';
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 app.post("/notify/:bookingId", async (req, res) => {
   const { email } = req.body;
   const { bookingId } = req.params;
@@ -172,14 +174,9 @@ app.post("/notify/:bookingId", async (req, res) => {
     const booking = await db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId]);
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS }
-    });
-
-    const mailOptions = {
-      from: process.env.GMAIL_USER,
+    const msg = {
       to: email,
+      from: 'mohammaddomangcag.abdulmanan@my.smciligan.edu.ph', // verified sender in SendGrid
       subject: `Booking Confirmed: ${booking.hotel_name}`,
       text: `
 Hello,
@@ -197,13 +194,13 @@ Thank you for booking with us!
 `
     };
 
-    await transporter.sendMail(mailOptions);
-
+    await sgMail.send(msg);
     return res.json({ message: "Email sent successfully" });
   } catch (err) {
     console.error("Email sending error:", err);
     return res.status(500).json({ error: "Failed to send email" });
   }
 });
+
 
 app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));
