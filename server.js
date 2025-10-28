@@ -93,6 +93,10 @@ app.post("/bookings", async (req, res) => {
     );
 
     const bookingId = result.lastID;
+    console.log("🔍 ENV CHECK:", {
+    PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID ? "✅ found" : "❌ missing",
+    PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET ? "✅ found" : "❌ missing"
+  });
 
     // Get PayPal access token
     const authRes = await fetch("https://api-m.sandbox.paypal.com/v1/oauth2/token", {
@@ -123,8 +127,8 @@ app.post("/bookings", async (req, res) => {
         intent: "CAPTURE",
         purchase_units: [{ amount: { currency_code: "USD", value: total.toFixed(2) }, description: hotelName }],
         application_context: {
-          return_url: `http://localhost:${PORT}/success.html?bookingId=${bookingId}&email=${encodeURIComponent(email || "user@example.com")}`,
-          cancel_url: `http://localhost:${PORT}/cancel.html`,
+          return_url: `${RAILWAY_URL}/success.html?bookingId=${bookingId}&email=${encodeURIComponent(email || "user@example.com")}`,
+          cancel_url: `${RAILWAY_URL}/cancel.html`,
         },
       }),
     });
