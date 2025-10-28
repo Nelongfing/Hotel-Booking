@@ -45,7 +45,6 @@ app.get("/hotels", (req, res) => {
   const apiKey = process.env.LITEAPI_API_KEY;
   const page = parseInt(req.query.page || "1");
   const limit = parseInt(req.query.limit || "10");
-  const RAILWAY_URL = 'hotel-booking-production-19e0.up.railway.app';
 
   const url = "https://api.liteapi.travel/v3.0/data/hotels?countryCode=PH&cityName=Manila";
   const options = { headers: { "X-API-Key": apiKey } };
@@ -116,9 +115,11 @@ app.post("/bookings", async (req, res) => {
     if (!authData.access_token) throw new Error("Missing PayPal access token");
 
     const accessToken = authData.access_token;
+    const RAILWAY_URL = 'hotel-booking-production-19e0.up.railway.app';
 
     // Create PayPal order
     const orderRes = await fetch("https://api-m.sandbox.paypal.com/v2/checkout/orders", {
+
       method: "POST",
       headers: {
         "Content-Type": "application/json",
