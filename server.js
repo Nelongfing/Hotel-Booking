@@ -3,18 +3,21 @@ import bodyParser from "body-parser";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 import fetch from "node-fetch";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import https from "https";
+import twilio from "twilio";
 
 dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 
-// PORT must be declared before using it
-const PORT = process.env.PORT || 3000;
+// PORT
+const PORT = process.env.PORT || 8080;
+
+// Twilio client
+const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // Static files
 const __filename = fileURLToPath(import.meta.url);
@@ -82,7 +85,6 @@ app.post("/bookings", async (req, res) => {
 
     let { hotelName, total, checkin, checkout, guests, email } = req.body;
     if (!hotelName || !total) return res.status(400).json({ error: "Missing required fields" });
-
     total = Number(total);
 
     const result = await db.run(
@@ -94,7 +96,7 @@ app.post("/bookings", async (req, res) => {
     const bookingId = result.lastID;
     console.log("🔍 ENV CHECK:", {
       PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID ? "✅ found" : "❌ missing",
-      PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET ? "✅ found" : "❌ missing"
+      PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET ? "✅ found" : "❌ missing",
     });
 
     // Get PayPal access token
@@ -114,9 +116,7 @@ app.post("/bookings", async (req, res) => {
     if (!authData.access_token) throw new Error("Missing PayPal access token");
 
     const accessToken = authData.access_token;
-
-    // Use env variable for deployed URL, fallback to localhost
-    const RAILWAY_URL = process.env.RAILWAY_URL || `http://localhost:${PORT}`;
+    const RAILWAY_URL = `https://${process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_URL}`;
 
     // Create PayPal order
     const orderRes = await fetch("https://api-m.sandbox.paypal.com/v2/checkout/orders", {
@@ -129,7 +129,9 @@ app.post("/bookings", async (req, res) => {
         intent: "CAPTURE",
         purchase_units: [{ amount: { currency_code: "USD", value: total.toFixed(2) }, description: hotelName }],
         application_context: {
-          return_url: `${RAILWAY_URL}/success.html?bookingId=${bookingId}&email=${encodeURIComponent(email || "user@example.com")}`,
+          return_url: `${RAILWAY_URL}/success.html?bookingId=${bookingId}&email=${encodeURIComponent(
+            email || "user@example.com"
+          )}`,
           cancel_url: `${RAILWAY_URL}/cancel.html`,
         },
       }),
@@ -148,6 +150,7 @@ app.post("/bookings", async (req, res) => {
   }
 });
 
+// PayPal webhook
 app.post("/payments/webhook/paypal", async (req, res) => {
   const { bookingId } = req.body;
   if (!bookingId) return res.status(400).json({ error: "Missing bookingId" });
@@ -161,46 +164,37 @@ app.post("/payments/webhook/paypal", async (req, res) => {
   }
 });
 
-import sgMail from '@sendgrid/mail';
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-app.post("/notify/:bookingId", async (req, res) => {
-  const { email } = req.body;
+// Send SMS notification using Twilio
+app.post("/notify-sms/:bookingId", async (req, res) => {
+  const { phone } = req.body;
   const { bookingId } = req.params;
 
-  if (!email) return res.status(400).json({ error: "Missing email" });
+  if (!phone) return res.status(400).json({ error: "Missing phone number" });
 
   try {
     const booking = await db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId]);
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    const msg = {
-      to: email,
-      from: 'mohammaddomangcag.abdulmanan@my.smciligan.edu.ph', // verified sender in SendGrid
-      subject: `Booking Confirmed: ${booking.hotel_name}`,
-      text: `
-Hello,
-
-Your booking is confirmed!
-
-Booking ID: ${booking.id}
+    const message = `
+Booking confirmed!
 Hotel: ${booking.hotel_name}
 Check-in: ${booking.checkin}
 Check-out: ${booking.checkout}
 Guests: ${booking.guests}
-Total Amount: $${booking.total_amount}
+Total: $${booking.total_amount}
+`;
 
-Thank you for booking with us!
-`
-    };
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone,
+    });
 
-    await sgMail.send(msg);
-    return res.json({ message: "Email sent successfully" });
+    res.json({ message: "SMS sent successfully" });
   } catch (err) {
-    console.error("Email sending error:", err);
-    return res.status(500).json({ error: "Failed to send email" });
+    console.error("SMS sending error:", err);
+    res.status(500).json({ error: "Failed to send SMS" });
   }
 });
-
 
 app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));
