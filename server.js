@@ -6,7 +6,6 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import https from "https";
 import { Resend } from "resend";
 
 dotenv.config();
@@ -15,6 +14,9 @@ app.use(bodyParser.json());
 
 // PORT
 const PORT = process.env.PORT || 8080;
+
+// Resend client
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Static files
 const __filename = fileURLToPath(import.meta.url);
@@ -39,9 +41,6 @@ let db;
   `);
 })();
 
-// Resend setup
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 // Fetch hotels
 app.get("/hotels", (req, res) => {
   const apiKey = process.env.LITEAPI_API_KEY;
@@ -51,38 +50,33 @@ app.get("/hotels", (req, res) => {
   const url = "https://api.liteapi.travel/v3.0/data/hotels?countryCode=PH&cityName=Manila";
   const options = { headers: { "X-API-Key": apiKey } };
 
-  https.get(url, options, (apiRes) => {
-    let data = "";
-    apiRes.on("data", (chunk) => (data += chunk));
-    apiRes.on("end", () => {
-      try {
-        const json = JSON.parse(data);
-        const hotels = (json.data || []).map((h) => ({
-          id: h.id,
-          name: h.name,
-          description: h.hotelDescription?.replace(/<[^>]+>/g, ""),
-          address: h.address,
-          city: h.city,
-          stars: h.stars,
-          rating: h.rating,
-          image: h.main_photo || h.thumbnail,
-        }));
-        const start = (page - 1) * limit;
-        const end = start + limit;
-        res.json({ data: hotels.slice(start, end), total: hotels.length });
-      } catch (err) {
-        console.error("Parse error:", err);
-        res.status(500).json({ error: "Failed to parse hotels" });
-      }
+  fetch(url, options)
+    .then((response) => response.json())
+    .then((json) => {
+      const hotels = (json.data || []).map((h) => ({
+        id: h.id,
+        name: h.name,
+        description: h.hotelDescription?.replace(/<[^>]+>/g, ""),
+        address: h.address,
+        city: h.city,
+        stars: h.stars,
+        rating: h.rating,
+        image: h.main_photo || h.thumbnail,
+      }));
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      res.json({ data: hotels.slice(start, end), total: hotels.length });
+    })
+    .catch((err) => {
+      console.error("Fetch error:", err);
+      res.status(500).json({ error: "Failed to fetch hotels" });
     });
-  });
 });
 
 // Create booking + PayPal order
 app.post("/bookings", async (req, res) => {
   try {
     console.log("📦 Incoming booking:", req.body);
-
     let { hotelName, total, checkin, checkout, guests, email } = req.body;
     if (!hotelName || !total) return res.status(400).json({ error: "Missing required fields" });
     total = Number(total);
@@ -112,7 +106,6 @@ app.post("/bookings", async (req, res) => {
     });
 
     const authData = await authRes.json();
-    console.log("🔑 PayPal Auth Response:", authData);
     if (!authData.access_token) throw new Error("Missing PayPal access token");
 
     const accessToken = authData.access_token;
@@ -127,7 +120,9 @@ app.post("/bookings", async (req, res) => {
       },
       body: JSON.stringify({
         intent: "CAPTURE",
-        purchase_units: [{ amount: { currency_code: "USD", value: total.toFixed(2) }, description: hotelName }],
+        purchase_units: [
+          { amount: { currency_code: "USD", value: total.toFixed(2) }, description: hotelName },
+        ],
         application_context: {
           return_url: `${RAILWAY_URL}/success.html?bookingId=${bookingId}&email=${encodeURIComponent(
             email || "user@example.com"
@@ -138,8 +133,6 @@ app.post("/bookings", async (req, res) => {
     });
 
     const orderData = await orderRes.json();
-    console.log("🧾 PayPal order:", orderData);
-
     const approveLink = orderData.links?.find((l) => l.rel === "approve")?.href;
     if (!approveLink) throw new Error("Missing PayPal approve link");
 
@@ -150,55 +143,51 @@ app.post("/bookings", async (req, res) => {
   }
 });
 
-// PayPal webhook
+// Confirm booking
 app.post("/payments/webhook/paypal", async (req, res) => {
   const { bookingId } = req.body;
   if (!bookingId) return res.status(400).json({ error: "Missing bookingId" });
 
   try {
     await db.run(`UPDATE bookings SET status = ? WHERE id = ?`, ["confirmed", bookingId]);
-    res.send("ok");
+    console.log(`✅ Booking ${bookingId} confirmed`);
+    res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Booking confirmation error:", err);
     res.status(500).json({ error: "Failed to confirm booking" });
   }
 });
 
-// Send email notification using Resend
-app.post("/notify-email/:bookingId", async (req, res) => {
-  const { email } = req.body;
+// Send confirmation email with Resend
+app.post("/notify/:bookingId", async (req, res) => {
   const { bookingId } = req.params;
-
-  if (!email) return res.status(400).json({ error: "Missing email" });
+  const { email } = req.body;
 
   try {
     const booking = await db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId]);
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    const emailContent = `
-      <div style="font-family:Arial,sans-serif;color:#333;">
-        <h2>Booking Confirmed</h2>
-        <p>Your booking has been confirmed successfully.</p>
-        <p><strong>Hotel:</strong> ${booking.hotel_name}</p>
-        <p><strong>Check-in:</strong> ${booking.checkin}</p>
-        <p><strong>Check-out:</strong> ${booking.checkout}</p>
-        <p><strong>Guests:</strong> ${booking.guests}</p>
-        <p><strong>Total:</strong> $${booking.total_amount}</p>
-        <hr>
-        <p style="font-size:12px;color:#777;">Booking ID: ${bookingId}</p>
-      </div>
+    const subject = `Booking Confirmed: ${booking.hotel_name}`;
+    const html = `
+      <h2>Booking Confirmed!</h2>
+      <p><strong>Hotel:</strong> ${booking.hotel_name}</p>
+      <p><strong>Check-in:</strong> ${booking.checkin}</p>
+      <p><strong>Check-out:</strong> ${booking.checkout}</p>
+      <p><strong>Guests:</strong> ${booking.guests}</p>
+      <p><strong>Total:</strong> $${booking.total_amount}</p>
+      <p>Status: ${booking.status}</p>
     `;
 
     const response = await resend.emails.send({
       from: "Hotel Booking <onboarding@resend.dev>",
       to: email,
-      subject: "Booking Confirmation",
-      html: emailContent,
+      subject,
+      html,
     });
 
-    res.json({ message: "Email sent successfully", response });
+    res.json({ message: "Email sent", response });
   } catch (err) {
-    console.error("Email sending error:", err);
+    console.error("❌ Email send error:", err);
     res.status(500).json({ error: "Failed to send email" });
   }
 });
