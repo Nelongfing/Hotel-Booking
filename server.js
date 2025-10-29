@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import https from "https";
-import twilio from "twilio";
+import { Resend } from "resend";
 
 dotenv.config();
 const app = express();
@@ -15,9 +15,6 @@ app.use(bodyParser.json());
 
 // PORT
 const PORT = process.env.PORT || 8080;
-
-// Twilio client
-const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // Static files
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +38,9 @@ let db;
     )
   `);
 })();
+
+// Resend setup
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Fetch hotels
 app.get("/hotels", (req, res) => {
@@ -164,36 +164,42 @@ app.post("/payments/webhook/paypal", async (req, res) => {
   }
 });
 
-// Send SMS notification using Twilio
-app.post("/notify-sms/:bookingId", async (req, res) => {
-  const { phone } = req.body;
+// Send email notification using Resend
+app.post("/notify-email/:bookingId", async (req, res) => {
+  const { email } = req.body;
   const { bookingId } = req.params;
 
-  if (!phone) return res.status(400).json({ error: "Missing phone number" });
+  if (!email) return res.status(400).json({ error: "Missing email" });
 
   try {
     const booking = await db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId]);
     if (!booking) return res.status(404).json({ error: "Booking not found" });
 
-    const message = `
-Booking confirmed!
-Hotel: ${booking.hotel_name}
-Check-in: ${booking.checkin}
-Check-out: ${booking.checkout}
-Guests: ${booking.guests}
-Total: $${booking.total_amount}
-`;
+    const emailContent = `
+      <div style="font-family:Arial,sans-serif;color:#333;">
+        <h2>Booking Confirmed</h2>
+        <p>Your booking has been confirmed successfully.</p>
+        <p><strong>Hotel:</strong> ${booking.hotel_name}</p>
+        <p><strong>Check-in:</strong> ${booking.checkin}</p>
+        <p><strong>Check-out:</strong> ${booking.checkout}</p>
+        <p><strong>Guests:</strong> ${booking.guests}</p>
+        <p><strong>Total:</strong> $${booking.total_amount}</p>
+        <hr>
+        <p style="font-size:12px;color:#777;">Booking ID: ${bookingId}</p>
+      </div>
+    `;
 
-    await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phone,
+    const response = await resend.emails.send({
+      from: "Hotel Booking <onboarding@resend.dev>",
+      to: email,
+      subject: "Booking Confirmation",
+      html: emailContent,
     });
 
-    res.json({ message: "SMS sent successfully" });
+    res.json({ message: "Email sent successfully", response });
   } catch (err) {
-    console.error("SMS sending error:", err);
-    res.status(500).json({ error: "Failed to send SMS" });
+    console.error("Email sending error:", err);
+    res.status(500).json({ error: "Failed to send email" });
   }
 });
 
